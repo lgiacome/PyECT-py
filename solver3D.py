@@ -14,8 +14,11 @@ def neq(a, b, tol=1e-8):
 
 
 class EMSolver3D:
-    def __init__(self, grid, sol_type, cfln, i_s, j_s, k_s, bc_low, bc_high,
-                 N_pml_low=None, N_pml_high=None):
+    def __init__(self, grid, sol_type, cfln=0.5,
+                 bc_low=['Dirichlet', 'Dirichlet', 'Dirichlet'], 
+                 bc_high=['Dirichlet', 'Dirichlet', 'Dirichlet'], 
+                 i_s=0, j_s=0, k_s=0, N_pml_low=None, N_pml_high=None):
+    
         self.grid = grid
         self.type = type
         self.cfln = cfln
@@ -898,7 +901,8 @@ class EMSolver3D:
             block.sum_e_fields()
 
     def one_step_fdtd(self):
-        self.advance_h_fdtd(self.grid.Sxy, self.grid.Syz, self.grid.Szx, self.Ex, self.Ey,                             self.Ez, self.Hx, self.Hy, self.Hz, self.Nx, self.Ny, self.Nz,
+        self.advance_h_fdtd(self.grid.Sxy, self.grid.Syz, self.grid.Szx, self.Ex, self.Ey,
+                            self.Ez, self.Hx, self.Hy, self.Hz, self.Nx, self.Ny, self.Nz,
                             self.C1, self.C2, self.C7)
 
         for block in self.blocks:

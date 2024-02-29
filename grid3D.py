@@ -2,6 +2,7 @@ import numpy as np
 from grid2D import Grid2D
 from grid2D import compute_areas as compute_areas_2D, mark_cells as mark_cells_2D
 from numba import jit
+from field import Field
 
 def seg_length(x_1, y_1, z_1, x_2, y_2, z_2):
     return np.linalg.norm(np.array([x_1 - x_2, y_1 - y_2, z_1 - z_2]))
@@ -32,6 +33,7 @@ class Grid3D:
     """
 
     def __init__(self, xmin, xmax, ymin, ymax, zmin, zmax, nx, ny, nz, conductors, sol_type):
+        
         self.xmin = xmin
         self.xmax = xmax
         self.ymin = ymin
@@ -83,14 +85,14 @@ class Grid3D:
         self.broken_yz = np.zeros_like(self.Syz, dtype=bool)
         self.broken_zx = np.zeros_like(self.Szx, dtype=bool)
 
-        if (sol_type is not 'FDTD') and (sol_type is not 'DM') and (sol_type is not 'ECT'):
+        if (sol_type is not 'FDTD') and (sol_type is not 'DM') and (sol_type is not 'ECT') and (sol_type is not 'FIT'):
             raise ValueError("sol_type must be:\n" +
                              "\t'FDTD' for standard staircased FDTD\n" +
                              "\t'DM' for Dey-Mittra conformal FDTD\n" +
                              "\t'ECT' for Enlarged Cell Technique conformal FDTD")
 
         self.compute_edges()
-        if sol_type is 'DM' or sol_type is 'FDTD':
+        if sol_type is 'DM' or sol_type is 'FDTD': #or sol_type is 'FIT':
             self.compute_areas(self.l_x, self.l_y, self.l_z, self.Sxy, self.Syz, self.Szx,
                                self.Sxy_red, self.Syz_red, self.Szx_red,
                                self.nx, self.ny, self.nz, self.dx, self.dy, self.dz)
@@ -108,6 +110,8 @@ class Grid3D:
                             self.Sxy_stab, self.Syz_stab, self.Szx_stab, self.flag_unst_cell_xy, self.flag_unst_cell_yz,
                             self.flag_unst_cell_zx, self.flag_bound_cell_xy, self.flag_bound_cell_yz, self.flag_bound_cell_zx,
                             self.flag_avail_cell_xy, self.flag_avail_cell_yz, self.flag_avail_cell_zx)
+
+
             # info about intruded cells (i,j,[(i_borrowing,j_borrowing,area_borrowing, )])
             self.borrowing_xy = np.empty((nx, ny, nz + 1), dtype=object)
             self.borrowing_yz = np.empty((nx + 1, ny, nz), dtype=object)
@@ -135,7 +139,64 @@ class Grid3D:
                             self.flag_unst_cell_zx, self.flag_bound_cell_xy, self.flag_bound_cell_yz, self.flag_bound_cell_zx,
                             self.flag_avail_cell_xy, self.flag_avail_cell_yz, self.flag_avail_cell_zx)
             self.compute_extensions()
+        
+        
+        elif sol_type is 'FIT':
 
+            # primal Grid G
+            self.x = np.linspace(self.xmin, self.xmax, self.nx+1)
+            self.y = np.linspace(self.ymin, self.ymax, self.ny+1)
+            self.z = np.linspace(self.zmin, self.zmax, self.nz+1)
+
+            Y, X, Z = np.meshgrid(self.y, self.x, self.z)
+
+            self.L = Field(self.nx, self.ny, self.nz)
+            self.L.field_x = X[1:, 1:, 1:] - X[:-1, :-1, :-1]
+            self.L.field_y = Y[1:, 1:, 1:] - Y[:-1, :-1, :-1]
+            self.L.field_z = Z[1:, 1:, 1:] - Z[:-1, :-1, :-1]
+
+            self.iA = Field(self.nx, self.ny, self.nz)
+            self.iA.field_x = np.divide(1.0, self.L.field_y * self.L.field_z)
+            self.iA.field_y = np.divide(1.0, self.L.field_x * self.L.field_z)
+            self.iA.field_z = np.divide(1.0, self.L.field_x * self.L.field_y)
+
+            # tilde grid ~G
+            #self.itA = self.iA
+            #self.tL = self.L
+
+            self.tx = (self.x[1:]+self.x[:-1])/2 
+            self.ty = (self.y[1:]+self.y[:-1])/2
+            self.tz = (self.z[1:]+self.z[:-1])/2
+
+            self.tx = np.append(self.tx, self.tx[-1])
+            self.ty = np.append(self.ty, self.ty[-1])
+            self.tz = np.append(self.tz, self.tz[-1])
+
+            tY, tX, tZ = np.meshgrid(self.ty, self.tx, self.tz)
+
+            self.tL = Field(self.nx, self.ny, self.nz)
+            self.tL.field_x = tX[1:, 1:, 1:] - tX[:-1, :-1, :-1]
+            self.tL.field_y = tY[1:, 1:, 1:] - tY[:-1, :-1, :-1]
+            self.tL.field_z = tZ[1:, 1:, 1:] - tZ[:-1, :-1, :-1]
+
+            self.itA = Field(self.nx, self.ny, self.nz)
+            aux = self.tL.field_y * self.tL.field_z
+            self.itA.field_x = np.divide(1.0, aux, out=np.zeros_like(aux), where=aux!=0)
+            aux = self.tL.field_x * self.tL.field_z
+            self.itA.field_y = np.divide(1.0, aux, out=np.zeros_like(aux), where=aux!=0)
+            aux = self.tL.field_x * self.tL.field_y
+            self.itA.field_z = np.divide(1.0, aux, out=np.zeros_like(aux), where=aux!=0)
+            del aux
+            
+            self.compute_areas(self.l_x, self.l_y, self.l_z, self.Sxy, self.Syz, self.Szx,
+                               self.Sxy_red, self.Syz_red, self.Szx_red,
+                               self.nx, self.ny, self.nz, self.dx, self.dy, self.dz)
+            self.mark_cells(self.l_x, self.l_y, self.l_z, self.nx, self.ny, self.nz, self.dx, self.dy, self.dz,
+                            self.Sxy, self.Syz, self.Szx, self.flag_int_cell_xy, self.flag_int_cell_yz, self.flag_int_cell_zx,
+                            self.Sxy_stab, self.Syz_stab, self.Szx_stab, self.flag_unst_cell_xy, self.flag_unst_cell_yz,
+                            self.flag_unst_cell_zx, self.flag_bound_cell_xy, self.flag_bound_cell_yz, self.flag_bound_cell_zx,
+                            self.flag_avail_cell_xy, self.flag_avail_cell_yz, self.flag_avail_cell_zx)
+            
     """
   Function to compute the length of the edges of the conformal grid.
     Inputs:

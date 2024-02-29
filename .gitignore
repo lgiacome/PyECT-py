@@ -5,3 +5,15 @@ venv
 DM_*
 FDTD_*
 ECT_*
+*/img*
+*.png
+*.gif
+*.old*
+*.svg
+*.pdf
+*.h5
+*.log
+*.txt
+*.dat
+*/hdf5*
+*/results*/*
